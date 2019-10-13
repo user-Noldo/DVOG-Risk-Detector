@@ -1,0 +1,121 @@
+//@version=4
+study("Dependent Variable Odd Generator Risk Detector" ,shorttitle = "DVOG Risk Detector" ,overlay = false)
+src = close
+
+lengthBB = 20
+
+t_bb     = lengthBB / 3
+
+Multiplier = 2
+
+
+// Essential Functions 
+
+f_sum(_src , _length) => 
+
+    _output  = 0.00 
+    
+    _length_adjusted = _length < 1 ? 1 : _length
+    
+    for i = 0 to _length_adjusted-1
+        _output := _output + _src[i]
+
+
+f_sma(_src, _length)=>
+    _length_adjusted = _length < 1 ? 1 : _length
+    float _sum = 0
+    for _i = 0 to (_length_adjusted - 1)
+        _sum := _sum + _src[_i]
+    _return = _sum / _length_adjusted
+   
+
+// Unlocked Exponential Moving Average Function
+
+f_ema(_src, _length)=>
+    _length_adjusted = _length < 1 ? 1 : _length
+    _multiplier = 2 / (_length_adjusted + 1)
+    _return  = 0.00
+    _return := na(_return[1]) ? _src : ((_src - _return[1]) * _multiplier) + _return[1]
+
+
+// Function Standard Deviation
+
+f_stdev(_src,_length) =>
+    float _output = na 
+    _length_adjusted = _length < 2 ? 2 : _length
+    _avg  = f_ema(_src , _length_adjusted)
+    evar  = (_src - _avg) * (_src - _avg)
+    evar2 = ((f_sum(evar,_length_adjusted))/_length_adjusted)
+    
+    _output := sqrt(evar2)
+
+
+
+e   = f_ema(src,t_bb)
+
+std = f_stdev(src , t_bb )
+
+
+upband = e + (Multiplier * std)
+dnband = e - (Multiplier * std)
+basis  = e
+
+
+// Bollinger Band Width (BBW)
+
+_bbw    = (upband - dnband) / basis
+
+
+// Bollinger Band Width Money Flow Index (BBW MFI)
+
+lengthMFI = 14
+
+t_bbwmfi  = lengthMFI / 3
+
+// BBW MFI
+
+upper_sbbw = f_sum(volume * (change(_bbw) <= 0 ? 0 : _bbw), t_bbwmfi)
+lower_sbbw = f_sum(volume * (change(_bbw) >= 0 ? 0 : _bbw), t_bbwmfi)
+
+
+_bbwmf = rsi(upper_sbbw, lower_sbbw)
+
+
+/// ***** DEFINITION : ODDS *****
+
+// Bollinger Band Width Odds
+
+
+_trend_gross  = (_bbwmf )
+_stag_gross   = (100 - _bbwmf)
+
+
+_bbw_intersect     =  ((_trend_gross * _stag_gross ) / 100 ) 
+_trend_active      =  (_trend_gross - _bbw_intersect) 
+_trend_stagnant    =  (_stag_gross  - _bbw_intersect) 
+
+// Conditions 
+
+_coeff_trend = (_bbw_intersect + _trend_active + _trend_stagnant) / 100 
+
+_odd_trend_active   = (_trend_active)   / _coeff_trend 
+_odd_trend_stagnant = (_trend_stagnant) / _coeff_trend
+
+
+_trend_factor    =  ( _odd_trend_active / 100 )
+_stagnant_factor =  ( _odd_trend_stagnant  / 100 )
+_stag_factor_ema = f_ema(_stagnant_factor,3)
+
+_stagnant_market      = (_stagnant_factor > 0.500 and _stagnant_factor > _stag_factor_ema)
+
+
+f_bar_color = _stagnant_market ? color.yellow : na
+
+    
+barcolor(color=f_bar_color)
+bgcolor(_stagnant_market ? color.orange : na)
+
+
+plot(_stagnant_factor , color = color.yellow , style = plot.style_line)
+plot(_stag_factor_ema , color = color.blue   , style = plot.style_line)
+hline(0.5 , color = color.red)
